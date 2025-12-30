@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Binary Chat</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --text: #f1f5f9; --primary: #3b82f6; --safe: #10b981; }
+        body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; flex-direction: column; height: 100vh; }
+        
+        /* Header & Safe Mode Toggle */
+        header { background: var(--card); padding: 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; }
+        .mode-status { font-weight: bold; font-size: 0.8rem; padding: 5px 10px; border-radius: 20px; transition: 0.3s; }
+        .safe-on { background: var(--safe); color: white; box-shadow: 0 0 10px var(--safe); }
+        .safe-off { background: #64748b; color: white; }
+
+        /* Chat Area */
+        #chat-box { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+        .msg { max-width: 80%; padding: 10px 15px; border-radius: 15px; font-size: 0.95rem; line-height: 1.4; position: relative; }
+        .sent { align-self: flex-end; background: var(--primary); border-bottom-right-radius: 2px; }
+        .received { align-self: flex-start; background: var(--card); border-bottom-left-radius: 2px; }
+        .binary-raw { font-family: monospace; font-size: 0.7rem; display: block; opacity: 0.7; margin-bottom: 5px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; }
+
+        /* Input Area */
+        .input-area { background: var(--card); padding: 15px; display: flex; gap: 10px; }
+        input { flex: 1; background: #0f172a; border: 1px solid #334155; color: white; padding: 12px; border-radius: 8px; outline: none; }
+        button { background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        
+        .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--safe); }
+        input:checked + .slider:before { transform: translateX(20px); }
+    </style>
+</head>
+<body>
+
+<header>
+    <div><strong>BitChat Alpha</strong></div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+        <span id="status-text" class="mode-status safe-off">GÜVENLİ MOD: KAPALI</span>
+        <label class="switch">
+            <input type="checkbox" id="safeModeToggle">
+            <span class="slider"></span>
+        </label>
+    </div>
+</header>
+
+<div id="chat-box"></div>
+
+<div class="input-area">
+    <input type="text" id="messageInput" placeholder="Mesajınızı yazın...">
+    <button onclick="sendMessage()">Gönder</button>
+</div>
+
+<script>
+    // --- MORSE & BINARY ENGINE (Senin Sistemin) ---
+    const MORSE_DICT = {'A': '.-', 'B': '-...', 'C': '-.-.', 'D': '-..', 'E': '.', 'F': '..-.', 'G': '--.', 'H': '....', 'I': '..', 'J': '.---', 'K': '-.-', 'L': '.-..', 'M': '--', 'N': '-.', 'O': '---', 'P': '.--.', 'Q': '--.-', 'R': '.-.', 'S': '...', 'T': '-', 'U': '..-', 'V': '...-', 'W': '.--', 'X': '-..-', 'Y': '-.--', 'Z': '--..', '1': '.----', '2': '..---', '3': '...--', '4': '....-', '5': '.....', '6': '-....', '7': '--...', '8': '---..', '9': '----.', '0': '-----', ' ': '/'};
+    const REVERSE_DICT = Object.fromEntries(Object.entries(MORSE_DICT).map(([k, v]) => [v, k]));
+
+    function encodeBinary(text) {
+        let binary = "";
+        for (let char of text.toUpperCase()) {
+            let mors = MORSE_DICT[char];
+            if (!mors) continue;
+            if (mors === '/') { binary += "0000000"; } 
+            else {
+                for (let s of mors) {
+                    binary += (s === '.') ? "10" : "1110";
+                }
+                binary += "00";
+            }
+        }
+        return binary;
+    }
+
+    function decodeBinary(bin) {
+        try {
+            let result = "";
+            let words = bin.split("0000000");
+            for (let word of words) {
+                let chars = word.split("000");
+                for (let char of chars) {
+                    let mors = "";
+                    let symbols = char.split("0");
+                    for (let s of symbols) {
+                        if (s === "1") mors += ".";
+                        else if (s === "111") mors += "-";
+                    }
+                    if (mors) result += REVERSE_DICT[mors] || "?";
+                }
+                result += " ";
+            }
+            return result.trim();
+        } catch(e) { return "[Hatalı Kod]"; }
+    }
+
+    // --- CHAT LOGIC ---
+    // Not: Gerçek bir sunucu için 'http://sunucu-adresiniz' yazılmalı. 
+    // Test için yerel ağda çalıştırabilirsiniz.
+    const socket = io('https://p2p-test-server.glitch.me'); // Örnek herkese açık test sunucusu
+
+    const safeToggle = document.getElementById('safeModeToggle');
+    const statusText = document.getElementById('status-text');
+
+    safeToggle.addEventListener('change', () => {
+        statusText.innerText = safeToggle.checked ? "GÜVENLİ MOD: AKTİF" : "GÜVENLİ MOD: KAPALI";
+        statusText.className = `mode-status ${safeToggle.checked ? 'safe-on' : 'safe-off'}`;
+    });
+
+    function sendMessage() {
+        const input = document.getElementById('messageInput');
+        let content = input.value;
+        if(!content) return;
+
+        let payload = {
+            text: content,
+            isSecure: safeToggle.checked,
+            timestamp: new Date().toLocaleTimeString()
+        };
+
+        if (payload.isSecure) {
+            payload.encoded = encodeBinary(content);
+        }
+
+        socket.emit('chat_message', payload);
+        displayMessage(payload, 'sent');
+        input.value = '';
+    }
+
+    socket.on('chat_message', (data) => {
+        displayMessage(data, 'received');
+    });
+
+    function displayMessage(data, type) {
+        const box = document.getElementById('chat-box');
+        const div = document.createElement('div');
+        div.className = `msg ${type}`;
+        
+        let displayContent = data.text;
+        
+        // Eğer güvenli modda gelmişse veya gönderilmişse
+        if (data.isSecure) {
+            let decoded = decodeBinary(data.encoded);
+            div.innerHTML = `<span class="binary-raw">${data.encoded.substring(0, 50)}...</span>
+                             <span style="color: #10b981;">[SECURE]:</span> ${decoded}`;
+        } else {
+            div.innerText = data.text;
+        }
+
+        box.appendChild(div);
+        box.scrollTop = box.scrollHeight;
+    }
+</script>
+
+</body>
+</html>

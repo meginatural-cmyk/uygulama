@@ -1,0 +1,3 @@
+dosyagörüntüleyici.py yi kullanmak için
+py -m pip install pywebview pillow openpyxl python-docx
+komutu gereklidir

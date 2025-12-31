@@ -1,3 +1,11 @@
 dosyagörüntüleyici.py yi kullanmak için
 py -m pip install pywebview pillow openpyxl python-docx
 komutu gereklidir
+debian tabanlı işletim sistemlerinde bu komut ve diğer komut gereklidir ve ilk bu komut çalıştırılmalıdır
+sudo apt update
+sudo apt install python3-tk python3-pil python3-pil.imagetk libwebkit2gtk-4.0-37
+arch tabanlı işletim sistemlerinde bu komut ve diğer komut gereklidir ve ilk bu komut çalıştırılmalıdır
+sudo pacman -S tk python-pillow python-pywebview
+youtube.py
+yi kullanmak için bu komut gereklidir 
+py -m pip install PyQt5 PyQtWebEngine yt-dlp
